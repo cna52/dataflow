@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataflow-local"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "duckdb==1.4.1",
+  "psycopg[binary]==3.2.10",
+  "pyspark==4.0.1",
+  "pyarrow==21.0.0",
+  "dbt-core==1.10.13",
+  "dbt-duckdb==1.10.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.4.2"]
+
+[project.scripts]
+dataflow = "dataflow.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dataflow*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

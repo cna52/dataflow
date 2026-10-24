@@ -1,0 +1,9 @@
+.git
+.env
+data
+logs
+benchmark_results
+dbt_project/target
+dbt_project/logs
+__pycache__
+.pytest_cache

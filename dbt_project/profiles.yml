@@ -1,0 +1,8 @@
+dataflow:
+  target: local
+  outputs:
+    local:
+      type: duckdb
+      path: "{{ env_var('DATAFLOW_WAREHOUSE_PATH') }}"
+      schema: main
+      threads: 2

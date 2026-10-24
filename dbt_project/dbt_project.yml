@@ -1,0 +1,12 @@
+name: dataflow
+version: 1.0.0
+config-version: 2
+profile: dataflow
+model-paths: ["models"]
+test-paths: ["tests"]
+models:
+  dataflow:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table

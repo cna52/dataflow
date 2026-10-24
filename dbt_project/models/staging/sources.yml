@@ -1,0 +1,14 @@
+version: 2
+sources:
+  - name: raw
+    schema: main
+    description: Validated Parquet snapshots loaded into the candidate DuckDB warehouse.
+    tables:
+      - name: source_customers
+      - name: source_orders
+      - name: source_order_items
+      - name: source_transactions
+      - name: source_products
+      - name: source_categories
+      - name: source_events
+      - name: source_joined_order_items
