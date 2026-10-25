@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(os.environ.get("DATAFLOW_ROOT", Path(__file__).resolve().parents[1]))
-DATA = ROOT / "data"
+DATA = Path(os.environ.get("DATAFLOW_DATA_DIR", ROOT / "data"))
 SOURCES = DATA / "sources"
 RAW = DATA / "raw"
 PROCESSED = DATA / "processed"

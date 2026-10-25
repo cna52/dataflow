@@ -7,6 +7,7 @@ import pytest
 
 from dataflow.config import PROCESSED, WAREHOUSE
 from dataflow import ingest as ingestion
+from dataflow import process as processing
 from dataflow.util import safe_run_id
 
 
@@ -25,6 +26,26 @@ def test_raw_validation_detects_tampering(tmp_path, monkeypatch) -> None:
     }), encoding="utf-8")
     with pytest.raises(ValueError, match="checksum mismatch"):
         ingestion.validate_raw("damaged")
+
+
+def test_raw_history_uses_ingestion_time_not_run_name(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(ingestion, "RAW", tmp_path)
+    for name, created, digest in (("z_old", "2026-01-01T00:00:00+00:00", "first"),
+                                  ("a_new", "2026-02-01T00:00:00+00:00", "second")):
+        batch = tmp_path / name
+        batch.mkdir()
+        (batch / "manifest.json").write_text(json.dumps({
+            "created_at": created,
+            "files": [{"source_path": "catalog/pricing.csv", "sha256": digest}],
+        }), encoding="utf-8")
+    assert [path.parent.name for path in ingestion.manifests()] == ["z_old", "a_new"]
+    assert ingestion._latest_file_hashes()["catalog/pricing.csv"] == "second"
+
+
+def test_processing_replays_raw_batches_after_previous_snapshot(tmp_path, monkeypatch) -> None:
+    history = [tmp_path / name / "manifest.json" for name in ("published", "failed", "repaired")]
+    monkeypatch.setattr(processing, "manifests", lambda: history)
+    assert [path.name for path in processing._raw_batches("repaired", "published", False)] == ["failed", "repaired"]
 
 
 def test_published_warehouse_contract() -> None:

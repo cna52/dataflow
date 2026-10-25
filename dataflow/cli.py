@@ -8,6 +8,8 @@ from datetime import date
 
 from dataflow import generate
 from dataflow.benchmark import benchmark
+from dataflow.pipeline_benchmark import benchmark_pipeline
+from dataflow.recovery_check import verify_recovery
 from dataflow.config import WAREHOUSE
 from dataflow.ingest import ingest, validate_raw
 from dataflow.process import process
@@ -61,6 +63,11 @@ def main(argv: list[str] | None = None) -> None:
     backfill.add_argument("--run-id", default=None)
     benchmark_cmd = sub.add_parser("benchmark")
     benchmark_cmd.add_argument("--sizes", nargs="+", type=int, default=[10_000, 100_000, 500_000])
+    pipeline_benchmark_cmd = sub.add_parser("benchmark-pipeline")
+    pipeline_benchmark_cmd.add_argument("--sizes", nargs="+", type=int, default=[10_000, 100_000, 500_000])
+    pipeline_benchmark_cmd.add_argument("--keep-data", action="store_true")
+    recovery_cmd = sub.add_parser("verify-recovery")
+    recovery_cmd.add_argument("--keep-data", action="store_true")
     query_cmd = sub.add_parser("query")
     query_cmd.add_argument("sql")
     args = parser.parse_args(argv)
@@ -72,6 +79,12 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "benchmark":
         print(benchmark(args.sizes))
+        return
+    if args.command == "benchmark-pipeline":
+        print(benchmark_pipeline(args.sizes, keep_data=args.keep_data))
+        return
+    if args.command == "verify-recovery":
+        print(verify_recovery(keep_data=args.keep_data))
         return
     if args.command == "query":
         for row in query(args.sql):

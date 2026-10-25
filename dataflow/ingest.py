@@ -40,6 +40,15 @@ def _extract_table(connection: psycopg.Connection, table: str, target: Path, cur
         return {"rows": count, "updated_at": lower_ts.isoformat(), "last_id": lower_id}
 
 
+def _latest_file_hashes() -> dict[str, str]:
+    latest: dict[str, str] = {}
+    for archived in manifests():
+        history = json.loads(archived.read_text(encoding="utf-8"))
+        for item in history["files"]:
+            latest[item["source_path"]] = item["sha256"]
+    return latest
+
+
 def ingest(run_id: str, full: bool = False) -> Path:
     """Write an immutable batch and advance source cursors after durable publication."""
     safe_run_id(run_id)
@@ -58,8 +67,7 @@ def ingest(run_id: str, full: bool = False) -> Path:
         with connection.cursor() as cursor:
             cursor.execute("SELECT source_name,updated_at,last_id FROM control.watermarks")
             watermarks = {name: (ts, row_id) for name, ts, row_id in cursor.fetchall()}
-            cursor.execute("SELECT source_path,sha256 FROM control.file_versions")
-            seen_files = set(cursor.fetchall())
+        latest_files = _latest_file_hashes()
         if not watermarks:
             full = True
             manifest["mode"] = "full"
@@ -71,7 +79,7 @@ def ingest(run_id: str, full: bool = False) -> Path:
         for source in sorted((SOURCES / "catalog").glob("*.csv")) + sorted((SOURCES / "events").glob("*.jsonl")):
             digest = sha256(source)
             relative = str(source.relative_to(SOURCES))
-            if full or (relative, digest) not in seen_files:
+            if full or latest_files.get(relative) != digest:
                 target = pending / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
@@ -105,7 +113,9 @@ def _commit_manifest(connection: psycopg.Connection, manifest: dict, final: Path
 
 
 def manifests() -> list[Path]:
-    return sorted(RAW.glob("*/manifest.json"))
+    paths = RAW.glob("*/manifest.json")
+    return sorted(paths, key=lambda path: (
+        json.loads(path.read_text(encoding="utf-8")).get("created_at", ""), str(path)))
 
 
 def validate_raw(run_id: str) -> None:

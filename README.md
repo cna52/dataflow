@@ -31,6 +31,8 @@ docker compose run --rm --entrypoint dataflow airflow-init seed --scenario updat
 docker compose run --rm --entrypoint dataflow airflow-init run
 docker compose run --rm --entrypoint dataflow airflow-init backfill --start-date 2026-08-01 --end-date 2026-08-31
 docker compose run --rm --entrypoint dataflow airflow-init benchmark --sizes 10000 100000 500000
+docker compose run --rm --entrypoint dataflow airflow-init benchmark-pipeline --sizes 10000 100000 500000
+docker compose run --rm --entrypoint dataflow airflow-init verify-recovery
 ```
 
 Choose dates inside the generated source period for the backfill command. It reconstructs source state from immutable raw batches and merges facts and daily sales for the selected business dates. The `updates` scenario changes payment and order states, adds a late event, versions one product's category, and creates one paid order in the new category.
@@ -39,9 +41,9 @@ Choose dates inside the generated source period for the backfill command. It rec
 
 ## Data flow and grain
 
-1. `ingest` reads source rows in `(updated_at, ID)` order and copies changed files to `data/raw/<run_id>/`. Each manifest records checksums and counts. The source cursor advances after the immutable batch is published.
+1. `ingest` reads source rows in `(updated_at, ID)` order and copies changed files to `data/raw/<run_id>/`. Each manifest records checksums and counts. File changes are compared with the latest archived version, so reverting a file to older contents creates a new raw batch. The source cursor advances after the immutable batch is published.
 2. `validate` verifies checksums and row counts.
-3. `process` validates, deduplicates, joins, and writes Parquet snapshots under `data/processed/<run_id>/`. Invalid rows are retained in `quarantine` with reasons. Every processed snapshot represents the latest known source state. Incremental runs combine the preceding snapshot with the new raw batch; full and backfill runs replay raw history.
+3. `process` validates, deduplicates, joins, and writes Parquet snapshots under `data/processed/<run_id>/`. Changed key buckets are rewritten, and unchanged Parquet files are hard-linked into the new immutable snapshot. Joined items are bucketed by order ID, so a changed order updates only the buckets it touches. Invalid rows are retained in an active `quarantine` with reasons; a valid correction clears its keyed error. Incremental runs replay every raw batch since the prior processed snapshot, including batches left by a failed processing run. Full and backfill runs replay raw history in ingestion-time order.
 4. `load` copies the last published DuckDB file to a candidate and replaces its source tables with the current Parquet snapshot. Any quarantined records block this step.
 5. `model` runs dbt models and tests, then checks fact uniqueness and order/item revenue reconciliation.
 6. `publish` moves the validated candidate into `data/warehouse/versions/` and atomically updates `latest.json`. Queries resolve that pointer, so a failed run leaves the preceding warehouse published.
@@ -72,10 +74,10 @@ docker compose run --rm --entrypoint pytest airflow-init -q
 docker compose run --rm airflow-init dags list
 ```
 
-`dataflow model` sets the dbt warehouse path and runs tests as part of `dbt build`. Benchmark results are written to ignored `benchmark_results/`. They compare Spark and DuckDB on the same generated Parquet input and record query time, rows per second, and process peak memory. The numbers are local measurements, not scaling claims.
+`dataflow model` sets the dbt warehouse path and runs tests as part of `dbt build`. Benchmark results are written to ignored `benchmark_results/`. `benchmark` compares Spark and DuckDB on one aggregation. `benchmark-pipeline` creates an isolated PostgreSQL database and data directory per size, runs full, incremental, and full rebuild profiles, then checks that the incremental and rebuild warehouse totals match. It records stage times, throughput, DuckDB query latency, processed-row counts, and sampled container memory. The temporary databases and datasets are removed after each size unless `--keep-data` is set. `verify-recovery` runs a separate isolated exercise of invalid-event rejection, correction, idempotent rerun, a historical order change, and a date backfill.
 
 All generated source, raw, processed, warehouse, logs, and benchmark files are ignored by Git. The repository stores only code and configuration.
 
-### Measured local run
+### Measured local runs
 
-On a 16 GB Apple Silicon laptop, a 10,000-order seed produced 25,210 order items and 35,210 events. The first pipeline run took 17.6 seconds; an update batch with 91 changed orders, 56 changed transactions, and one late event took 17.0 seconds. The current suite passes 28 dbt tests with zero quarantined rows. Spark rewrites the current Parquet snapshot on each run, so incremental extraction and dbt merges did not yet make the whole pipeline faster at this size. A one-process aggregation benchmark across 10,000, 100,000, and 500,000 rows found DuckDB faster than local Spark; see the generated JSON in `benchmark_results/` for timings and memory figures. These are single-run measurements, not broad performance claims.
+See [BENCHMARKS.md](BENCHMARKS.md) for the full-pipeline measurements and their limits. These are single-machine runs, not scaling claims.
